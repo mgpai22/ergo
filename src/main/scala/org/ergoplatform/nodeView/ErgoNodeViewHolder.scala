@@ -689,6 +689,49 @@ abstract class ErgoNodeViewHolder[State <: ErgoState[State]](settings: ErgoSetti
       sender() ! healthCheckReply
   }
 
+  protected def handleAdministrativeCommands: Receive = {
+    case ResetBlocksAfterHeight(targetHeight) =>
+      log.info(s"Received request to reset blocks after height $targetHeight")
+      
+      val currentHeight = history().headersHeight
+      val result = Try {
+        if (targetHeight <= 0) {
+          throw new IllegalArgumentException("Target height must be positive")
+        }
+        if (targetHeight >= currentHeight) {
+          throw new IllegalArgumentException(s"Target height $targetHeight must be less than current height $currentHeight")
+        }
+        
+        val hasFullBlockAtTarget = history().fullBlockIdsAtHeight(targetHeight).nonEmpty
+        if (!hasFullBlockAtTarget) {
+          throw new IllegalArgumentException(s"No full block found at height $targetHeight")
+        }
+        
+        history().truncateAfter(targetHeight) match {
+          case Success(_) =>
+            if (ergoSettings.nodeSettings.extraIndex) {
+              // find header ID at target height to use as branch point
+              history().headerIdsAtHeight(targetHeight).lastOption.foreach { branchPointId =>
+                context.system.eventStream.publish(Rollback(branchPointId))
+              }
+            }
+            log.info(s"Successfully reset blocks after height $targetHeight")
+            "success"
+          case Failure(e) =>
+            throw e
+        }
+      }.recover {
+        case e: IllegalArgumentException =>
+          log.warn(s"Invalid reset request for height $targetHeight: ${e.getMessage}")
+          throw e
+        case e =>
+          log.error(s"Failed to reset blocks after height $targetHeight", e)
+          throw e
+      }
+      
+      sender() ! result
+  }
+
   override def receive: Receive =
     processRemoteModifiers orElse
       processLocallyGeneratedModifiers orElse
@@ -696,7 +739,8 @@ abstract class ErgoNodeViewHolder[State <: ErgoState[State]](settings: ErgoSetti
       getCurrentInfo orElse
       getNodeViewChanges orElse
       processStateSnapshot orElse
-      handleHealthCheck orElse {
+      handleHealthCheck orElse
+      handleAdministrativeCommands orElse {
         case a: Any => log.error("Strange input: " + a)
       }
 

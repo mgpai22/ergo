@@ -13,12 +13,14 @@ import org.ergoplatform.nodeView.history.ErgoHistoryReader
 import org.ergoplatform.settings.{Algos, ErgoSettings, RESTApiSettings}
 import org.ergoplatform.http.api.ApiError.BadRequest
 import org.ergoplatform.nodeView.LocallyGeneratedModifier
+import org.ergoplatform.network.ErgoNodeViewSynchronizerMessages.ResetBlocksAfterHeight
 import scorex.core.api.http.ApiResponse
 import scorex.crypto.authds.merkle.MerkleProof
 import scorex.crypto.hash.Digest32
 import scorex.util.ModifierId
 
 import scala.concurrent.Future
+import scala.util.{Success, Failure, Try}
 
 case class BlocksApiRoute(viewHolderRef: ActorRef, readersHolder: ActorRef, ergoSettings: ErgoSettings)
                          (implicit val context: ActorRefFactory) extends ErgoBaseApiRoute with ApiCodecs {
@@ -41,7 +43,8 @@ case class BlocksApiRoute(viewHolderRef: ActorRef, readersHolder: ActorRef, ergo
       getBlockTransactionsByHeaderIdR ~
       getProofForTxR ~
       getFullBlockByHeaderIdR ~
-      getModifierByIdR
+      getModifierByIdR ~
+      resetBlocksAfterHeightR
   }
 
   private def getHistory: Future[ErgoHistoryReader] =
@@ -182,6 +185,27 @@ case class BlocksApiRoute(viewHolderRef: ActorRef, readersHolder: ActorRef, ergo
 
   def getFullBlockByHeaderIdsR: Route = (post & path("headerIds") & modifierIds) { ids =>
     ApiResponse(getFullBlockByHeaderIds(ids))
+  }
+
+  def resetBlocksAfterHeightR: Route = (post & pathPrefix("resetAfter" / IntNumber)) { height =>
+    if (height < 0) {
+      BadRequest("Height must be non-negative")
+    } else if (height == 0) {
+      BadRequest("Cannot reset to genesis block height (0)")
+    } else {
+      ApiResponse(resetBlocksAfterHeight(height))
+    }
+  }
+
+  private def resetBlocksAfterHeight(height: Int): Future[String] = {
+    import akka.util.Timeout
+    import scala.concurrent.duration._
+    implicit val timeout: Timeout = Timeout(30.seconds)
+    
+    (viewHolderRef ? ResetBlocksAfterHeight(height)).mapTo[Try[String]].map {
+      case Success(result) => result
+      case Failure(e) => throw e
+    }
   }
 
 }

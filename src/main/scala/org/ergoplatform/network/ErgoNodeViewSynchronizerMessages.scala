@@ -49,6 +49,8 @@ object ErgoNodeViewSynchronizerMessages {
 
     case class ChangedState(reader: ErgoStateReader) extends NodeViewChange
 
+    case class ResetBlocksAfterHeight(height: Int) extends NodeViewHolderEvent
+
     /**
      * Event which is published when rollback happened (on finding a better chain)
      *

@@ -2929,6 +2929,51 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
 
+  /blocks/resetAfter/{height}:
+    post:
+      summary: Roll back the node's blockchain to a specific height.
+      description: This will remove all blocks from the node's storage after the given height. The node will then need to re-synchronize with the network.
+      operationId: resetBlocksAfterHeight
+      tags:
+        - blocks
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: height
+          required: true
+          description: The height to roll back to. All blocks with a height greater than this will be removed. Must be a positive integer.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      responses:
+        '200':
+          description: The rollback process has been initiated successfully. The response contains a confirmation message.
+          content:
+            application/json:
+              schema:
+                type: string
+                example: "Rollback to height 500000 initiated."
+        '400':
+          description: The provided height is invalid (e.g., negative or zero).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: The API key is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
   /nipopow/popowHeaderById/{headerId}:
     get:
       summary: Construct PoPow header according to given header id

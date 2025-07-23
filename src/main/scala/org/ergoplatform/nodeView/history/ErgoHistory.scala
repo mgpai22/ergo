@@ -225,6 +225,53 @@ trait ErgoHistory
   }
 
   /**
+   * Deletes everything above the given height N, and resets best-header/full pointers
+   * @param targetHeight
+   * @return
+   */
+  def truncateAfter(targetHeight: Int): Try[Unit] = synchronized {
+    log.info(s"Truncating blockchain after height $targetHeight")
+    
+    val currentHeight = headersHeight
+    if (targetHeight >= currentHeight) {
+      return Success(())
+    }
+    
+    val heightsToDrop = (targetHeight + 1) to currentHeight
+
+    heightsToDrop.foreach { h =>
+      headerIdsAtHeight(h).foreach { headerId =>
+        forgetHeader(headerId).recover { case e =>
+          log.error(s"Failed to forget header $headerId at height $h", e)
+          throw new RuntimeException(s"Failed to forget header $headerId at height $h", e)
+        }
+      }
+    }
+
+    heightsToDrop.foreach { h =>
+      historyStorage.remove(
+        indicesToRemove = Array(heightIdsKey(h)),
+        idsToRemove = Array.empty[ModifierId]
+      )
+    }
+
+    val newBestHeaderId = headerIdsAtHeight(targetHeight).lastOption.getOrElse {
+      throw new IllegalArgumentException(s"No header found at height $targetHeight")
+    }
+    
+    val newBestFullOpt = fullBlockIdsAtHeight(targetHeight).lastOption
+
+    val pointersToInsert = 
+      Seq(BestHeaderKey -> idToBytes(newBestHeaderId)) ++
+      newBestFullOpt.map(id => BestFullBlockKey -> idToBytes(id))
+
+    historyStorage.insert(
+      pointersToInsert.toArray,
+      BlockSection.emptyArray
+    ).map(_ => ())
+  }
+
+  /**
     * @return read-only copy of this history
     */
   def getReader: ErgoHistoryReader = this
